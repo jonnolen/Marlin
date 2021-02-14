@@ -112,6 +112,7 @@ namespace Language_en {
   PROGMEM Language_Str MSG_EXTRUDE                         = _UxGT("Extrude");
   PROGMEM Language_Str MSG_RETRACT                         = _UxGT("Retract");
   PROGMEM Language_Str MSG_MOVE_AXIS                       = _UxGT("Move Axis");
+  PROGMEM Language_Str MSG_AUX_LEVEL                       = _UxGT("Aux Level");
   PROGMEM Language_Str MSG_BED_LEVELING                    = _UxGT("Bed Leveling");
   PROGMEM Language_Str MSG_LEVEL_BED                       = _UxGT("Level Bed");
   PROGMEM Language_Str MSG_LEVEL_CORNERS                   = _UxGT("Level Corners");

@@ -173,6 +173,7 @@ select_t select_page{0}, select_file{0}, select_print{0}, select_prepare{0}
          , select_acc{0}
          , select_jerk{0}
          , select_step{0}
+         , select_aux_level{0}
          ;
 
 uint8_t index_file     = MROWS,
@@ -518,7 +519,8 @@ inline bool Apply_Encoder(const ENCODER_DiffState &encoder_diffState, auto &valr
 #define PREPARE_CASE_MOVE  1
 #define PREPARE_CASE_DISA  2
 #define PREPARE_CASE_HOME  3
-#define PREPARE_CASE_ZOFF (PREPARE_CASE_HOME + ENABLED(HAS_ZOFFSET_ITEM))
+#define PREPARE_CASE_AUX  (PREPARE_CASE_HOME + ENABLED(HAS_ZOFFSET_ITEM))
+#define PREPARE_CASE_ZOFF (PREPARE_CASE_AUX + ENABLED(HAS_ZOFFSET_ITEM))
 #define PREPARE_CASE_PLA  (PREPARE_CASE_ZOFF + ENABLED(HAS_HOTEND))
 #define PREPARE_CASE_ABS  (PREPARE_CASE_PLA + ENABLED(HAS_HOTEND))
 #define PREPARE_CASE_COOL (PREPARE_CASE_ABS + EITHER(HAS_HOTEND, HAS_HEATED_BED))
@@ -578,6 +580,11 @@ inline void Item_Prepare_Disable(const uint8_t row) {
   else
     DWIN_Frame_AreaCopy(1, 103, 59, 200, 74, LBLX, MBASE(row)); // "Disable Stepper"
   Draw_Menu_Line(row, ICON_CloseMotor);
+}
+
+inline void Item_Prepare_Aux(const uint8_t row) {
+  Draw_Menu_Line(row, 0, "AUX Level");
+  Draw_More_Icon(row);
 }
 
 inline void Item_Prepare_Home(const uint8_t row) {
@@ -679,7 +686,8 @@ inline void Draw_Prepare_Menu() {
   if (PVISI(0)) Draw_Back_First(select_prepare.now == 0);                         // < Back
   if (PVISI(PREPARE_CASE_MOVE)) Item_Prepare_Move(PSCROL(PREPARE_CASE_MOVE));     // Move >
   if (PVISI(PREPARE_CASE_DISA)) Item_Prepare_Disable(PSCROL(PREPARE_CASE_DISA));  // Disable Stepper
-  if (PVISI(PREPARE_CASE_HOME)) Item_Prepare_Home(PSCROL(PREPARE_CASE_HOME));     // Auto Home
+    if (PVISI(PREPARE_CASE_HOME)) Item_Prepare_Home(PSCROL(PREPARE_CASE_HOME));     // Auto Home
+  if (PVISI(PREPARE_CASE_AUX)) Item_Prepare_Aux(PSCROL(PREPARE_CASE_AUX));        // AUX Level
   #if HAS_ZOFFSET_ITEM
     if (PVISI(PREPARE_CASE_ZOFF)) Item_Prepare_Offset(PSCROL(PREPARE_CASE_ZOFF)); // Edit Z-Offset / Babystep / Set Home Offset
   #endif
@@ -2223,6 +2231,85 @@ void HMI_PauseOrStop() {
   DWIN_UpdateLCD();
 }
 
+
+#define AUX_BL 1
+#define AUX_BR  2
+#define AUX_TR  3
+#define AUX_TL  4
+#define AUX_CENTER 5
+#define AUX_TOTAL AUX_CENTER
+
+inline void Draw_AuxLevel_Menu() {
+  Clear_Main_Window();
+  Draw_Title(GET_TEXT_F(MSG_AUX_LEVEL));
+  Draw_Back_First(select_aux_level.now == 0);  
+  Draw_Menu_Line(AUX_BL, 0, "Goto Bottom Left");
+  Draw_Menu_Line(AUX_BR, 0, "Goto Bottom Right");
+  Draw_Menu_Line(AUX_TR, 0, "Goto Top Right");
+  Draw_Menu_Line(AUX_TL, 0, "Goto Top Left");
+  Draw_Menu_Line(AUX_CENTER, 0, "Goto Center");
+}
+
+inline void sendUp() {    
+  queue.enqueue_one_P(PSTR("G0 Z10"));
+}
+
+inline void sendDown() {
+  queue.enqueue_one_P(PSTR("G1 Z0"));
+}
+
+inline void sendGoto(int x, int y){
+  char cmd[32];
+  sprintf(cmd, "G0 F%d X%d Y%d", HOMING_FEEDRATE_XY, x, y);
+  queue.enqueue_one_P(PSTR("M420 S0"));
+  queue.enqueue_one_P(PSTR("G90"));
+  sendUp();
+  queue.enqueue_one_P(cmd);
+  sendDown();
+}
+
+inline void HMI_AuxLevel() {
+  ENCODER_DiffState encoder_diffState = get_encoder_state();
+  if (encoder_diffState == ENCODER_DIFF_NO) return;
+
+  // Avoid flicker by updating only the previous menu
+  if (encoder_diffState == ENCODER_DIFF_CW) {
+    if (select_aux_level.inc(1 + AUX_TOTAL)){
+      Move_Highlight(1, select_aux_level.now);
+    }
+  }
+  else if (encoder_diffState == ENCODER_DIFF_CCW) {
+    if (select_aux_level.dec()) {      
+      Move_Highlight(-1, select_aux_level.now);
+    }
+  }
+  else if (encoder_diffState == ENCODER_DIFF_ENTER) {
+    switch (select_aux_level.now) {
+      case 0: // Back
+        checkkey = Prepare;
+        select_prepare.set(PREPARE_CASE_AUX);
+        index_prepare = MROWS;
+        Draw_Prepare_Menu();
+        break;
+      case AUX_BL:        
+        sendGoto(32, 35);
+        break;
+      case AUX_TL:
+        sendGoto(32, 206);
+        break;
+      case AUX_BR:
+        sendGoto(202, 32);
+        break;
+      case AUX_TR:
+        sendGoto(202,206);
+        break;
+      case AUX_CENTER:
+        sendGoto(110,110);
+        break;
+    }
+  }
+}
+
 inline void Draw_Move_Menu() {
   Clear_Main_Window();
 
@@ -2340,6 +2427,11 @@ void HMI_Prepare() {
           current_position.e = HMI_ValueStruct.Move_E_scale = 0;
           DWIN_Draw_Signed_Float(font8x16, Color_Bg_Black, 3, 1, 216, MBASE(4), 0);
         #endif
+        break;
+      case PREPARE_CASE_AUX: // Aux Level Menu
+        checkkey = AuxLevel;
+        select_aux_level.reset();
+        Draw_AuxLevel_Menu();
         break;
       case PREPARE_CASE_DISA: // Disable steppers
         queue.inject_P(PSTR("M84"));
@@ -3637,6 +3729,7 @@ void DWIN_HandleScreen() {
     case MainMenu:        HMI_MainMenu(); break;
     case SelectFile:      HMI_SelectFile(); break;
     case Prepare:         HMI_Prepare(); break;
+    case AuxLevel:        HMI_AuxLevel(); break;
     case Control:         HMI_Control(); break;
     case Leveling:        break;
     case PrintProcess:    HMI_Printing(); break;

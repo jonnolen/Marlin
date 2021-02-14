@@ -49,6 +49,7 @@ enum processID : uint8_t {
   AxisMove,
   TemperatureID,
   Motion,
+  AuxLevel,
   Info,
   Tune,
   #if HAS_PREHEAT
